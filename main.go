@@ -21,9 +21,9 @@ import (
 
 const printTheFileLogs = false
 const period = 5000
-const kp = float64(period) / 360.0 / 1000
+const kp = 1 //float64(period) / 360.0 / 1000
 const ki = 0
-const kd = 1000
+const kd = 0 //1000
 
 var data [][]string
 
