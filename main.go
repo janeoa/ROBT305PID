@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/csv"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	tm "github.com/buger/goterm"
 	"github.com/fatih/color"
 	"github.com/gosuri/uilive"
 	"github.com/olekukonko/tablewriter"
@@ -26,6 +28,8 @@ const ki = 0
 const kd = 1000
 
 var data [][]string
+var tim []float64
+var pos []float64
 
 func main() {
 	initMotor()
@@ -50,6 +54,24 @@ func main() {
 	go draw()
 
 	time.Sleep(time.Second * 10)
+
+	color.Cyan("%d", len(tim))
+	fmt.Println(plot(tim, pos))
+	fmt.Println(tim[:10])
+	fmt.Println(pos[:10])
+
+	file, err := os.Create("result.csv")
+	check(err)
+	defer file.Close()
+
+	writerCSV := csv.NewWriter(file)
+	defer writerCSV.Flush()
+
+	writerCSV.Write([]string{"time", "position", "\n"})
+	for i := range pos {
+		err := writerCSV.Write([]string{fmt.Sprintf("%3.30f, %f\n", tim[i], pos[i])})
+		check(err)
+	}
 }
 
 func getTicks() int {
@@ -80,15 +102,37 @@ func setDirection(forward bool) {
 	// }
 }
 
+func plot(xx []float64, yy []float64) string {
+	chart := tm.NewLineChart(80, 20)
+
+	data := new(tm.DataTable)
+	data.AddColumn("Time")
+	data.AddColumn("Angle")
+
+	mlen := int(math.Min(float64(len(xx)), float64(len(yy))))
+	if len(xx) != len(yy) {
+		color.Red("X and Y for plot doesnt match. Used len is %d", mlen)
+	}
+
+	for i := 0; i < len(xx); i++ {
+		data.AddRow(xx[i], yy[i])
+	}
+
+	return (chart.Draw(data))
+}
+
 func pid(zero int, aim float64) {
 
 	integral := 0.0
-	newtime := time.Now().Unix()
-	oldtime := time.Now().Unix()
+	newtime := time.Now().UnixNano()
+	starttime := newtime
+	oldtime := time.Now().UnixNano()
 	for {
-		newtime = time.Now().Unix()
+		newtime = time.Now().UnixNano()
+		tim = append(tim, float64(newtime-starttime)/1000000000.0)
 		tick := getTicks()
 		diff := aim - tickToDeg(tick-zero)
+		pos = append(pos, diff)
 		setDirection(diff > 0)
 		//TODO if diff>180 then -180
 		integral = integral + ki*diff*float64(newtime-oldtime)
@@ -115,6 +159,7 @@ func draw() {
 	writer := uilive.New()
 	// start listening for updates and render
 	writer.Start()
+	defer writer.Stop()
 	for {
 		tableString := &strings.Builder{}
 		table := tablewriter.NewWriter(tableString)
@@ -127,8 +172,7 @@ func draw() {
 		fmt.Fprintf(writer, tableString.String())
 		time.Sleep(time.Millisecond * 250)
 	}
-	fmt.Fprintln(writer, "Finished: Downloaded 100GB")
-	writer.Stop() // flush and stop rendering
+	// flush and stop rendering
 }
 
 func constrain(val float64, from float64, to float64) float64 {
